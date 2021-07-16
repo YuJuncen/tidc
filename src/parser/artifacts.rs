@@ -1,6 +1,8 @@
 use std::{str::FromStr};
 
-use super::{Error, Scanner};
+use tinyvec::{TinyVec};
+
+use super::{Error, scanner::Scanner};
 
 #[derive(Debug)]
 pub enum LogLevel {
@@ -18,6 +20,8 @@ pub struct LogFieldRef<'a> {
     pub value: LogStr<'a>,
 }
 
+const TINY_VEC_THRESHOLD : usize = 12;
+
 /// LogRecordRef is a line of PingCAP log.
 #[derive(Debug)]
 pub struct LogRecordRef<'a> {
@@ -25,7 +29,7 @@ pub struct LogRecordRef<'a> {
     pub time: &'a str,
     pub message: LogStr<'a>,
     pub source: Option<FileLineRef<'a>>,
-    pub entries: Vec<LogFieldRef<'a>>
+    pub entries: TinyVec<[LogFieldRef<'a>; TINY_VEC_THRESHOLD]>
 }
 
 #[derive(Debug)]
@@ -59,7 +63,7 @@ impl <'a> LogStr<'a> {
         let got = match text.peek_char() {
             Some('"') => text.quoted_string(),
             Some(_) => text.unquoted_string(),
-            None => Err(super::empty()),
+            None => Err(super::scanner::empty()),
         }?;
         Self::from_str(got)
     }
@@ -130,6 +134,16 @@ impl FromStr for LogLevel {
     }
 }
 
+// To make tiny vector happy.
+impl<'a> Default for LogFieldRef<'a> {
+    fn default() -> Self {
+        LogFieldRef {
+            key: LogStr::Unquoted(""),
+            value: LogStr::Unquoted(""),
+        }
+    }
+}
+
 impl<'a> LogRecordRef<'a> {
     fn parse_from_str<'b: 'a>(scanner: &'b Scanner<'a>) -> Result<Self, Error> {
         let time = scanner.in_bracket(|s| s.till_next_bracket())?;
@@ -141,12 +155,12 @@ impl<'a> LogRecordRef<'a> {
         let message = scanner.in_bracket(LogStr::parse_from_sequence)?;
         scanner.skip_space();
 
-        let mut entries = Vec::with_capacity(16);
+        let mut entries = TinyVec::<[LogFieldRef; TINY_VEC_THRESHOLD]>::default();
         while !scanner.is_done() {
             let field = match LogFieldRef::parse_from_field(& scanner) {
                 Err(err) => {
                     // TODO use slog!
-                    eprintln!("meet error {} during parsing, skipping this field (log = {})", err, scanner.target.get());
+                    eprintln!("meet error {} during parsing, skipping this field", err);
                     scanner.skip_until(|c| c == ']');
                     scanner.consume_exact(']')?;
                     continue;
@@ -187,7 +201,7 @@ mod displaying {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::Scanner;
+    use crate::parser::scanner::Scanner;
 
     #[test]
     fn test_log_str() {
@@ -235,6 +249,7 @@ mod tests {
         check(r#""start time"=992.547µs""#, r#""start time""#, r#""992.547µs""#);
         check("date-time=12:15:13", r#""date-time""#, r#""12:15:13""#);
         check(r#""rate limit"=128MB/s"#, r#""rate limit""#, r#""128MB/s""#);
+        check(r#"emoji😈="😊👼🇺🇳╮(￣▽￣\"\")╭""#, "\"emoji😈\"", r#""😊👼🇺🇳╮(￣▽￣\"\")╭""#);
         let entry = r#""rate l\n\"imit"="128 MB/s""#.to_owned();
         check(&entry, r#""rate l\n\"imit""#, r#""128 MB/s""#);
     }
