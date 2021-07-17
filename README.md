@@ -9,7 +9,7 @@ Yep, there isn't any command line arguments supported(for now).
 It only drains logs from stdin, then transforms them into json and send to stdout.
 
 Also no release or version number for now. 
-You may need to compile it manually until the author get ready, sorry for that.
+You may need to compile and install it manually (say, `cargo install --path .`) until the author get ready, sorry for that.
 
 ```bash
 echo '[2018/12/15 14:20:11.015 +08:00] [INFO] [tikv-server.rs:13] ["TiKV Started"]' | tidc
