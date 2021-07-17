@@ -11,3 +11,4 @@ pprof = { version = "0.4", features = ["flamegraph"] }
 
 [dependencies]
 tinyvec = { version = "1.2.0", features = ["alloc"] }
+quick-error = { version = "2.0" }

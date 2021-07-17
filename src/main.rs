@@ -1,12 +1,10 @@
 #![feature(never_type)]
 
-use std::{error, io::{BufRead, Error as IoError, Write}};
-use tidc::{json_writer::ToJSON, parser::artifacts::{with_log_record}};
-
-type Error = Box<dyn error::Error>;
+use std::{io::{self, BufRead, Error as IoError, Write}};
+use tidc::{json_writer::ToJSON, parser::{artifacts::{with_log_record}}};
 
 
-fn run_from_stdin() -> Result<(), Error> {
+fn run_from_stdin() -> Result<(), tidc::Error> {
     let stdin = std::io::stdin();
     let inputs = stdin.lock();
     let stdout = std::io::stdout();
@@ -14,7 +12,7 @@ fn run_from_stdin() -> Result<(), Error> {
     
     for line in inputs.lines() {
         let line = line?;
-        with_log_record(&line, |r| -> Result<(), Error> {
+        with_log_record(&line, |r| -> Result<(), IoError> {
             r.write_json_to(&mut outputs)?;
             writeln!(outputs)?;
             Ok(())
@@ -23,22 +21,10 @@ fn run_from_stdin() -> Result<(), Error> {
     Ok(())
 }
 
-fn main() -> Result<(), Error>{
+fn main() -> Result<(), tidc::Error>{
     match run_from_stdin() {
-        Err(e) => {
-            match e.downcast::<IoError>() {
-                Ok(os_err) => match os_err.kind() {
-                    std::io::ErrorKind::BrokenPipe => {
-                        // don't report error for BrokenPipe.
-                        return Ok(())
-                    }
-                    _ => return Err(os_err)
-                }
-                Err(e) => return Err(e)
-            }
-        }
-        Ok(()) => {
-            return Ok(());
-        }
+        Err(tidc::Error::Io(e)) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        Err(e) => Err(e),
+        Ok(()) => Ok(())
     }
 }

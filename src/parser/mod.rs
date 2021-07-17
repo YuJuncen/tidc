@@ -3,8 +3,6 @@ use std::{error::{self}, fmt::{self, Display}};
 pub mod artifacts;
 mod scanner;
 
-type Error = Box<dyn error::Error>;
-
 #[derive(Debug)]
 pub enum ParseError {
     Unexpected {

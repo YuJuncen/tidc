@@ -106,7 +106,7 @@ impl <'a> ToJSON for LogRecordRef<'a> {
         builder.write_field("message", &self.message)?;
         builder.write_field("level", &self.level)?;
         builder.write_field("source", &self.source)?;
-        builder.write_field("time", self.time)?;
+        builder.write_field("time", &self.time)?;
         builder.write_field("fields", self.entries.as_slice())?;
         builder.end()?;
         Ok(())
@@ -121,5 +121,11 @@ impl <'a> ToJSON for &[LogFieldRef<'a>] {
         }
         builder.end()?;
         Ok(())
+    }
+}
+
+impl <'a> ToJSON for TimeRef<'a> {
+    fn write_json_to<W: Write>(&self, mut w: W) -> io::Result<()> {
+        w.write_all(self.time_str.as_bytes())
     }
 }

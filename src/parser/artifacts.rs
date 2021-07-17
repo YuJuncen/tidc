@@ -2,7 +2,7 @@ use std::{str::FromStr};
 
 use tinyvec::{TinyVec};
 
-use super::{Error, scanner::Scanner};
+use super::{ParseError, scanner::Scanner};
 
 #[derive(Debug)]
 pub enum LogLevel {
@@ -26,7 +26,7 @@ const TINY_VEC_THRESHOLD : usize = 12;
 #[derive(Debug)]
 pub struct LogRecordRef<'a> {
     pub level: LogLevel,
-    pub time: &'a str,
+    pub time: TimeRef<'a>,
     pub message: LogStr<'a>,
     pub source: Option<FileLineRef<'a>>,
     pub entries: TinyVec<[LogFieldRef<'a>; TINY_VEC_THRESHOLD]>
@@ -40,7 +40,15 @@ pub struct FileLineRef<'a> {
 
 #[derive(Debug)]
 pub struct TimeRef<'a> {
-    pub time_str: &'a str
+    pub time_str: &'a str,
+}
+
+impl<'a> TimeRef<'a> {
+    fn from_str_unchecked(s: &'a str) -> Self {
+        Self {
+            time_str: s
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -50,7 +58,7 @@ pub enum LogStr<'a> {
 }
 
 impl <'a> LogStr<'a> {
-    fn from_str(s: &'a str) -> Result<Self, Error> {
+    fn from_str(s: &'a str) -> Result<Self, ParseError> {
         match s.chars().next() {
             None => Ok(Self::Unquoted("")),
             // TODO: check whether the string is rightly ends with '"'
@@ -59,7 +67,7 @@ impl <'a> LogStr<'a> {
         }
     }
 
-    fn parse_from_sequence(text: &Scanner<'a>) -> Result<Self, Error> {
+    fn parse_from_sequence(text: &Scanner<'a>) -> Result<Self, ParseError> {
         let got = match text.peek_char() {
             Some('"') => text.quoted_string(),
             Some(_) => text.unquoted_string(),
@@ -90,14 +98,14 @@ impl<'a> FileLineRef<'a> {
         })
     }
 
-    fn parse_from_str<'b: 'a>(text: &'b Scanner<'a>) -> Result<Option<Self>, Error> {
+    fn scan_from<'b: 'a>(text: &'b Scanner<'a>) -> Result<Option<Self>, ParseError> {
         let source = text.in_bracket( |s: &Scanner| { s.till_next_bracket() })?;
         Ok(Self::from_str(source))
     }
 }
 
 impl<'a> LogFieldRef<'a> {
-    fn parse_from_str(text: &'a Scanner) -> Result<Self, Error> {
+    fn scan_from(text: &'a Scanner) -> Result<Self, ParseError> {
         let key = LogStr::parse_from_sequence(text)?;
         text.consume_exact('=')?;
 
@@ -106,20 +114,20 @@ impl<'a> LogFieldRef<'a> {
         Ok(Self { key, value })
     }
 
-    fn parse_from_field<'b : 'a>(text: &'b Scanner<'a>) -> Result<Self, Error> {
-        text.in_bracket(Self::parse_from_str)
+    fn parse_from_field<'b : 'a>(text: &'b Scanner<'a>) -> Result<Self, ParseError> {
+        text.in_bracket(Self::scan_from)
     }
 }
 
 impl LogLevel {
-    fn parse_from_str<'a, 'b:'a>(text: &'b Scanner<'a>) -> Result<Self, Error> {
+    fn scan_from<'a, 'b:'a>(text: &'b Scanner<'a>) -> Result<Self, ParseError> {
         let field = text.in_bracket(|s| s.till_next_bracket())?;
         Self::from_str(field)
     }
 }
 
 impl FromStr for LogLevel {
-    type Err = Error;
+    type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let result = match s {
@@ -145,12 +153,12 @@ impl<'a> Default for LogFieldRef<'a> {
 }
 
 impl<'a> LogRecordRef<'a> {
-    fn parse_from_str<'b: 'a>(scanner: &'b Scanner<'a>) -> Result<Self, Error> {
-        let time = scanner.in_bracket(|s| s.till_next_bracket())?;
+    fn scan_from<'b: 'a>(scanner: &'b Scanner<'a>) -> Result<Self, ParseError> {
+        let time = TimeRef::from_str_unchecked(scanner.in_bracket(|s| s.till_next_bracket())?);
         scanner.skip_space();
-        let level= LogLevel::parse_from_str(&scanner)?;
+        let level= LogLevel::scan_from(&scanner)?;
         scanner.skip_space();
-        let source = FileLineRef::parse_from_str(&scanner)?;
+        let source = FileLineRef::scan_from(&scanner)?;
         scanner.skip_space();
         let message = scanner.in_bracket(LogStr::parse_from_sequence)?;
         scanner.skip_space();
@@ -175,9 +183,9 @@ impl<'a> LogRecordRef<'a> {
     }
 }
 
-pub fn with_log_record<'a, T: 'a>(s: &'a str, callback: impl FnOnce(LogRecordRef<'_>) -> T) -> Result<T, Error> {
+pub fn with_log_record<'a, T: 'a>(s: &'a str, callback: impl FnOnce(LogRecordRef<'_>) -> T) -> Result<T, ParseError> {
     let scanner = Scanner::over(s);
-    Ok(callback(LogRecordRef::parse_from_str(&scanner)?))
+    Ok(callback(LogRecordRef::scan_from(&scanner)?))
 }
 
 mod displaying {
@@ -238,7 +246,7 @@ mod tests {
 
         fn check(from: &str, key: &str, value: &str) {
             let scanner = Scanner::over(from);
-            let entry = LogFieldRef::parse_from_str(&scanner);
+            let entry = LogFieldRef::scan_from(&scanner);
             assert!(entry.is_ok(), "parsing entry meet error {}", entry.unwrap_err());
 
             let entry = entry.unwrap();

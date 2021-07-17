@@ -1,6 +1,6 @@
-use std::{cell::Cell, error};
+use std::{cell::Cell};
 
-use super::{Error, ParseError};
+use super::{ParseError};
 
 pub struct Scanner<'a> {
     target: &'a str,
@@ -44,7 +44,7 @@ impl<'a> Scanner<'a> {
         return self.remain().chars().next()
     }
 
-    pub fn unquoted_string(&self) -> Result<&'a str, Error> {
+    pub fn unquoted_string(&self) -> Result<&'a str, ParseError> {
         for (i, ch) in self.remain().char_indices() {
             if char_need_quote(ch) {
                 return Ok(self.consume(i)?);
@@ -57,12 +57,12 @@ impl<'a> Scanner<'a> {
         self.remain().chars().next().unwrap_or('$')
     }
 
-    pub fn unexpected(&self, expected: impl ToString, got: impl ToString) -> Error {
-        Box::new(ParseError::Unexpected {
+    pub fn unexpected(&self, expected: impl ToString, got: impl ToString) -> ParseError {
+        ParseError::Unexpected {
             expected: expected.to_string(),
             got: got.to_string(),
             hint: format!("{}>{}<{}", self.context_before(), self.current_char(), self.context_after())
-        })
+        }
     }
 
     pub fn context_before(&self) -> &str {
@@ -83,7 +83,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn quoted_string(&self) -> Result<&'a str, Error> {
+    pub fn quoted_string(&self) -> Result<&'a str, ParseError> {
         enum State {
             Escaping,
             Scanning
@@ -105,14 +105,14 @@ impl<'a> Scanner<'a> {
         Err(self.unexpected("\"", "EOF"))
     }
 
-    pub fn in_bracket<'this, T>(&'this self, inner_parser: impl FnOnce(&'this Self)->Result<T, Error>) -> Result<T, Error> {
+    pub fn in_bracket<'this, T>(&'this self, inner_parser: impl FnOnce(&'this Self)->Result<T, ParseError>) -> Result<T, ParseError> {
         self.consume_exact('[')?;
         let result = inner_parser(self)?;
         self.consume_exact(']')?;
         Ok(result)
     }
 
-    pub fn assert_current_is(&self, expected: char) -> Result<(), Error> {
+    pub fn assert_current_is(&self, expected: char) -> Result<(), ParseError> {
         match self.remain().chars().next() {
             Some(ch) if ch == expected => Ok(()),
             Some(ch) => Err(self.unexpected(expected, ch)),
@@ -120,7 +120,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn consume_exact(&self, expected: char) -> Result<(), Error> {
+    pub fn consume_exact(&self, expected: char) -> Result<(), ParseError> {
         self.assert_current_is(expected)?;
         self.consume(1)?;
         Ok(())
@@ -145,7 +145,7 @@ impl<'a> Scanner<'a> {
         self.skip_while(char::is_whitespace)
     }
 
-    pub fn till_next_bracket(& self) -> Result<&str, Error> {
+    pub fn till_next_bracket(& self) -> Result<&str, ParseError> {
         for (i, ch) in self.remain().char_indices() {
             if ch == ']' {
                 return Ok(self.consume(i)?)
@@ -162,6 +162,6 @@ fn char_need_quote(ch: char) -> bool {
     }
 }
 
-pub fn empty() -> Box<dyn error::Error> {
-    Box::new(ParseError::Empty)
+pub fn empty() -> ParseError {
+    ParseError::Empty
 }
