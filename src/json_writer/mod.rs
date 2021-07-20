@@ -126,6 +126,6 @@ impl <'a> ToJSON for &[LogFieldRef<'a>] {
 
 impl <'a> ToJSON for TimeRef<'a> {
     fn write_json_to<W: Write>(&self, mut w: W) -> io::Result<()> {
-        w.write_all(self.time_str.as_bytes())
+        w.write_fmt(format_args!("{:?}", self.time_str))
     }
 }
