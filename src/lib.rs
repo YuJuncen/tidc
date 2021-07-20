@@ -18,5 +18,8 @@ quick_error! {
             source(err)
             display("Error during parsing log: {}", err)
         }
+        Cli(msg: String) {
+            display("CLI interface error: {}", msg)
+        }
     }
 }

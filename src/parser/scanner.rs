@@ -44,13 +44,17 @@ impl<'a> Scanner<'a> {
         return self.remain().chars().next()
     }
 
-    pub fn unquoted_string(&self) -> Result<&'a str, ParseError> {
+    pub fn consume_until(&self, mut f: impl FnMut(char) -> bool) -> Result<&'a str, ParseError> {
         for (i, ch) in self.remain().char_indices() {
-            if char_need_quote(ch) {
+            if f(ch) {
                 return Ok(self.consume(i)?);
             }
         }
         return Ok(self.drain()?)
+    }
+
+    pub fn unquoted_string(&self) -> Result<&'a str, ParseError> {
+        self.consume_until(char_need_quote)
     }
 
     pub fn current_char(&self) -> char {
@@ -155,7 +159,7 @@ impl<'a> Scanner<'a> {
     }
 }
 
-fn char_need_quote(ch: char) -> bool {
+pub fn char_need_quote(ch: char) -> bool {
     match ch {
         '\x00'..='\x20' | '=' | '"' | '[' | ']'  => true,
         _ => false,

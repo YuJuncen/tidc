@@ -75,8 +75,16 @@ impl <'a> LogStr<'a> {
         }?;
         Self::from_str(got)
     }
-}
 
+    fn scan_from_with_need_quote(text: &Scanner<'a>, f: impl FnMut(char) -> bool) -> Result<Self, ParseError> {
+        let got = match text.peek_char() {
+            Some('"') => text.quoted_string(),
+            Some(_) => text.consume_until(f),
+            None => Err(super::scanner::empty()),
+        }?;
+        Self::from_str(got)
+    }
+}
 
 impl<'a> FileLineRef<'a> {
     const UNKNOWN : &'static str = "<unknown>";
@@ -110,6 +118,15 @@ impl<'a> LogFieldRef<'a> {
         text.consume_exact('=')?;
 
         let value = LogStr::parse_from_sequence(text)?;
+
+        Ok(Self { key, value })
+    }
+
+    fn scan_from_with_need_quote(text: &Scanner<'a>, mut f: impl FnMut(char) -> bool) -> Result<Self, ParseError> {
+        let key = LogStr::scan_from_with_need_quote(text, &mut f)?;
+        text.consume_exact('=')?;
+
+        let value = LogStr::scan_from_with_need_quote(text, &mut f)?;
 
         Ok(Self { key, value })
     }
@@ -186,6 +203,34 @@ impl<'a> LogRecordRef<'a> {
 pub fn with_log_record<'a, T: 'a>(s: &'a str, callback: impl FnOnce(LogRecordRef<'_>) -> T) -> Result<T, ParseError> {
     let scanner = Scanner::over(s);
     Ok(callback(LogRecordRef::scan_from(&scanner)?))
+}
+
+pub fn with_zap_object<'a, T: 'a>(s: &'a str, callback: impl FnOnce(&[LogFieldRef<'_>]) -> T) -> Result<T, ParseError> {
+    let scanner = Scanner::over(s);
+    let mut first = true;
+    let mut vec = TinyVec::<[_; TINY_VEC_THRESHOLD]>::new();
+    scanner.consume_exact('{')?;
+    loop {
+        if !first {
+            scanner.skip_space();
+            match scanner.peek_char() {
+                Some(',') => scanner.consume_exact(',')?,
+                Some('}') => {
+                    scanner.consume_exact('}')?;
+                    return Ok(callback(&vec))
+                }
+                Some(any) => {
+                    return Err(scanner.unexpected("',' or '}'", any))
+                }
+                None => return Err(ParseError::Empty),
+            }
+        }
+        first = false;
+        let field = LogFieldRef::scan_from_with_need_quote(&scanner, |c| {
+            super::scanner::char_need_quote(c) || c == ',' || c == '}' || c == '{'
+        })?;
+        vec.push(field);
+    }
 }
 
 mod displaying {
